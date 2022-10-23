@@ -1,0 +1,69 @@
+/* global ethers */
+/* eslint prefer-const: "off" */
+
+const { getSelector, getSelectors, FacetCutAction } = require('../libraries/diamond.js');
+const hre = require('hardhat');
+
+async function deployUpdate (diamondAddress = null) {
+  const accounts = await ethers.getSigners();
+  const contractOwner = accounts[0];
+
+  const MNFTAddress = {
+    goerli: () => "0xfC8ffFD573e7a8e33f4158710F2dF05763103Ed0",
+    mumbai: () => "0xfC8ffFD573e7a8e33f4158710F2dF05763103Ed0",
+    mainnet: () => "0x349b15326b48B261a7f600fb2fF906E49fefF8e9",
+    polygon: () => "0x349b15326b48B261a7f600fb2fF906E49fefF8e9",
+    hardhat: () => {
+        return diamondAddress;
+    }
+}[hre.network.name](); 
+
+  // deploy facets
+  console.log('');
+  console.log('Deploying facets');
+  const FacetNames = [
+    'ClaimNFTFacet'
+  ];
+  
+  const cut = [];
+  for (const FacetName of FacetNames) {
+    const Facet = await ethers.getContractFactory(FacetName);
+    const facet = await Facet.deploy();
+    await facet.deployed();
+    console.log(`${FacetName} deployed: ${facet.address}`);
+    cut.push({
+      facetAddress: facet.address,
+      action: FacetCutAction.Replace,
+      functionSelectors: getSelectors(facet)
+    });
+  }
+
+  // upgrade diamond with facets
+  console.log('');
+  console.log('Diamond Cut:', cut);
+  const diamondCut = await ethers.getContractAt('IDiamondCut', MNFTAddress);
+  // call to init function
+  let gasPrice = await ethers.provider.getGasPrice();
+
+  let tx = await diamondCut.diamondCut(cut, ethers.constants.AddressZero, '0x', {gasPrice: gasPrice});
+  console.log('Diamond cut tx: ', tx.hash);
+  let receipt = await tx.wait();
+  if (!receipt.status) {
+    throw Error(`Diamond upgrade failed: ${tx.hash}`);
+  }
+  console.log('Completed diamond cut');
+  return diamondAddress;
+}
+
+// We recommend this pattern to be able to use async/await everywhere
+// and properly handle errors.
+if (require.main === module) {
+  deployUpdate()
+    .then(() => process.exit(0))
+    .catch(error => {
+      console.error(error);
+      process.exit(1);
+    });
+}
+
+exports.deployUpdate = deployUpdate;

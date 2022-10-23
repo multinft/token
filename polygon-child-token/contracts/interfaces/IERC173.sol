@@ -1,0 +1,1 @@
+../../../token/contracts/interfaces/IERC173.sol
